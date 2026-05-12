@@ -88,3 +88,38 @@ A reminder is triggered **only when the user exceeds the configured distance**.
 * Smart suggestions based on user habits
 * Cloud synchronization
 
+  🔥 Firebase Integration
+
+The application uses Firebase for cloud synchronization and user data storage.
+
+📦 What is stored in Firebase?
+
+Each user has a separate document in Firestore:
+
+users/{userId}
+
+Inside each user document:
+
+🧾 Items Collection
+users/{userId}/items/{itemId}
+
+Each item contains:
+
+{
+  "name": "Keys",
+  "icon": "📦",
+  "isChecked": true,
+  "id": "unique_item_id"
+}
+🏠 User Settings (Home Location)
+
+Stored directly in the user document:
+
+users/{userId}
+
+Example:
+
+{
+  "home_location": "Tel Aviv, Israel"
+}
+
