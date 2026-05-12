@@ -8,12 +8,14 @@ import android.os.Bundle
 import android.view.View
 import android.widget.*
 import androidx.activity.enableEdgeToEdge
+import com.google.firebase.auth.FirebaseAuth
 import org.json.JSONArray
 
 class MainActivity : BaseActivity() {
 
     private lateinit var btnLocationTracking: Button
     private var isLocationTrackingEnabled = false
+    private val firebaseManager = FirebaseManager()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,19 +40,56 @@ class MainActivity : BaseActivity() {
                 )
             }
         }
+
     }
 
     override fun onResume() {
         super.onResume()
-        loadItemsDynamic()
 
-        // ✅ סנכרון מצב כפתור - אם השירות נהרס ע"י Android, נאפס את הכפתור
         val prefs = getSharedPreferences("RemMePrefs", Context.MODE_PRIVATE)
         isLocationTrackingEnabled = prefs.getBoolean("location_tracking_enabled", false)
         updateLocationButton()
+
+        // טוען תחילה מ-cache מקומי לתצוגה מיידית, ואז מסנכרן מ-Firestore
+        loadItemsDynamic(useCache = true)
+        syncItemsFromCloud()
     }
 
-    private fun loadItemsDynamic() {
+    // ─── סנכרון מ-Firestore ───────────────────────────────────────────────────
+
+    private fun syncItemsFromCloud() {
+        firebaseManager.loadItems { cloudItems ->
+            runOnUiThread {
+                if (cloudItems != null && cloudItems.isNotEmpty()) {
+                    // שמור ב-cache המקומי ורענן תצוגה
+                    saveItemsToLocal(cloudItems)
+                    loadItemsDynamic(useCache = true)
+                }
+            }
+        }
+    }
+
+    private fun saveItemsToLocal(items: List<ItemData>) {
+        val prefs = getSharedPreferences("RemMePrefs", Context.MODE_PRIVATE)
+        val arr = JSONArray()
+        items.forEach { item ->
+            val obj = org.json.JSONObject().apply {
+                put("name", item.name)
+                put("icon", item.icon)
+                put("isChecked", item.isChecked)
+                put("id", item.id)
+            }
+            arr.put(obj)
+        }
+        prefs.edit().putString("items_json", arr.toString()).apply()
+
+        val names = items.joinToString(",") { it.name }
+        prefs.edit().putString("items_list", names).apply()
+    }
+
+    // ─── בניית רשימה דינמית ───────────────────────────────────────────────────
+
+    private fun loadItemsDynamic(useCache: Boolean = true) {
         val container = findViewById<LinearLayout>(R.id.items_dynamic_container) ?: return
 
         while (container.childCount > 1) {
@@ -58,16 +97,15 @@ class MainActivity : BaseActivity() {
         }
 
         val prefs = getSharedPreferences("RemMePrefs", Context.MODE_PRIVATE)
-
-        // ✅ תוקן: קריאה מ-JSON (הפורמט החדש) עם fallback לפורמט הישן
         val itemsData = loadItemsData(prefs)
 
         for (item in itemsData) {
-            val divider = View(this)
-            divider.layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 2
-            )
-            divider.setBackgroundColor(0xFFE0E0E0.toInt())
+            val divider = View(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, 2
+                )
+                setBackgroundColor(0xFFE0E0E0.toInt())
+            }
             container.addView(divider)
 
             val row = LinearLayout(this).apply {
@@ -80,45 +118,50 @@ class MainActivity : BaseActivity() {
                 setPadding(0, p, 0, p)
             }
 
-            // אייקון
             val iconRes = getIconForItem(item.name)
             if (iconRes != null) {
-                val iv = ImageView(this)
-                val size = (32 * resources.displayMetrics.density).toInt()
-                iv.layoutParams = LinearLayout.LayoutParams(size, size)
-                iv.setBackgroundResource(iconRes)
+                val iv = ImageView(this).apply {
+                    val size = (32 * resources.displayMetrics.density).toInt()
+                    layoutParams = LinearLayout.LayoutParams(size, size)
+                    setBackgroundResource(iconRes)
+                }
                 row.addView(iv)
             } else {
-                val tv = TextView(this)
-                val size = (32 * resources.displayMetrics.density).toInt()
-                tv.layoutParams = LinearLayout.LayoutParams(size, size)
-                tv.text = "📦"
-                tv.textSize = 18f
-                tv.gravity = android.view.Gravity.CENTER
+                val tv = TextView(this).apply {
+                    val size = (32 * resources.displayMetrics.density).toInt()
+                    layoutParams = LinearLayout.LayoutParams(size, size)
+                    text = "📦"
+                    textSize = 18f
+                    gravity = android.view.Gravity.CENTER
+                }
                 row.addView(tv)
             }
 
-            // שם הפריט
-            val nameView = TextView(this)
-            val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            lp.marginStart = (12 * resources.displayMetrics.density).toInt()
-            nameView.layoutParams = lp
-            nameView.text = item.name
-            nameView.textSize = 15f
+            val nameView = TextView(this).apply {
+                val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                lp.marginStart = (12 * resources.displayMetrics.density).toInt()
+                layoutParams = lp
+                text = item.name
+                textSize = 15f
+            }
             row.addView(nameView)
 
-            // ✅ תוקן: Checkbox עם מצב שמור
-            val cb = CheckBox(this)
-            cb.isChecked = item.isChecked
-            cb.setOnCheckedChangeListener { _, isChecked ->
-                item.isChecked = isChecked
-                saveCheckedState(prefs, itemsData)
+            val cb = CheckBox(this).apply {
+                isChecked = item.isChecked
+                setOnCheckedChangeListener { _, isChecked ->
+                    item.isChecked = isChecked
+                    // עדכון מהיר - רק הפריט הספציפי ב-Firestore
+                    firebaseManager.updateItemChecked(item.id, isChecked)
+                    saveCheckedState(prefs, itemsData)
+                }
             }
             row.addView(cb)
 
             container.addView(row)
         }
     }
+
+    // ─── נתונים ──────────────────────────────────────────────────────────────
 
     private fun loadItemsData(prefs: android.content.SharedPreferences): List<ItemData> {
         val savedJson = prefs.getString("items_json", null)
@@ -139,7 +182,6 @@ class MainActivity : BaseActivity() {
             }
         }
 
-        // fallback לפורמט ישן
         val oldStr = prefs.getString("items_list", null)
         return if (!oldStr.isNullOrEmpty()) {
             oldStr.split(",").filter { it.isNotEmpty() }.map { ItemData(it, "📦") }
@@ -176,6 +218,8 @@ class MainActivity : BaseActivity() {
         "אוזניות" -> R.drawable.headphones
         else -> null
     }
+
+    // ─── מעקב מיקום ──────────────────────────────────────────────────────────
 
     private fun toggleLocationTracking() {
         isLocationTrackingEnabled = !isLocationTrackingEnabled

@@ -1,14 +1,17 @@
 package com.example.remme3
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
+import android.widget.Button
 import android.widget.ImageView
 import android.widget.LinearLayout
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
+import com.google.firebase.auth.FirebaseAuth
 
 /**
  * Activity בסיס שמכיל את התפריט המשותף לכל הדפים
@@ -20,6 +23,8 @@ abstract class BaseActivity : AppCompatActivity() {
     private lateinit var homeMenuItem: LinearLayout
     private lateinit var itemsMenuItem: LinearLayout
     private lateinit var settingsMenuItem: LinearLayout
+
+    private lateinit var btnLogout: LinearLayout
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,9 +43,10 @@ abstract class BaseActivity : AppCompatActivity() {
             homeMenuItem = findViewById(R.id.menu_home)
             itemsMenuItem = findViewById(R.id.menu_item)
             settingsMenuItem = findViewById(R.id.menu_setting)
+            btnLogout = findViewById(R.id.menu_logout)
             setupMenuListeners()
         } catch (e: Exception) {
-            // אם אין תפריט בדף הזה, זה בסדר
+
         }
     }
 
@@ -49,6 +55,8 @@ abstract class BaseActivity : AppCompatActivity() {
         homeMenuItem.setOnClickListener { navigateToHome() }
         itemsMenuItem.setOnClickListener { navigateToItems() }
         settingsMenuItem.setOnClickListener { navigateToSettings() }
+        btnLogout.setOnClickListener{ logout() }
+
     }
 
     private fun toggleMenu() {
@@ -83,6 +91,21 @@ abstract class BaseActivity : AppCompatActivity() {
             closeMenu()
             startActivity(Intent(this, SettingsActivity::class.java))
         } else closeMenu()
+    }
+
+    private fun logout() {
+        FirebaseAuth.getInstance().signOut()
+
+        // ניקוי נתונים מקומיים (אופציונלי אבל מומלץ)
+        getSharedPreferences("RemMePrefs", Context.MODE_PRIVATE)
+            .edit().clear().apply()
+
+        // מעבר למסך Login
+        val intent = Intent(this, LoginActivity::class.java)
+        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        startActivity(intent)
+
+        finish()
     }
 
     override fun onResume() {

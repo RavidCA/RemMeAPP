@@ -12,6 +12,7 @@ class SettingsActivity : BaseActivity() {
     private lateinit var seekBarDistance: SeekBar
     private lateinit var tvDistanceValue: TextView
     private lateinit var btnSaveSettings: Button
+    private val firebaseManager = FirebaseManager()
 
     private var alertDistance = 100
 
@@ -63,13 +64,33 @@ class SettingsActivity : BaseActivity() {
     }
 
     private fun loadSettings() {
-        val prefs = getSharedPreferences("RemMePrefs", Context.MODE_PRIVATE)
-        val homeLocation = prefs.getString("home_location", "")
-        alertDistance = prefs.getInt("alert_distance", 100)
 
-        if (!homeLocation.isNullOrEmpty()) {
-            editHomeLocation.setText(homeLocation)
+        val prefs = getSharedPreferences("RemMePrefs", Context.MODE_PRIVATE)
+
+        // קודם נטען מהענן ☁️
+        firebaseManager.loadHomeLocation { location ->
+
+            runOnUiThread {
+
+                if (!location.isNullOrEmpty()) {
+                    editHomeLocation.setText(location)
+
+                    // נשמור גם ל-local cache
+                    prefs.edit()
+                        .putString("home_location", location)
+                        .apply()
+                } else {
+                    // fallback ללוקאל אם אין ענן
+                    val local = prefs.getString("home_location", "")
+                    if (!local.isNullOrEmpty()) {
+                        editHomeLocation.setText(local)
+                    }
+                }
+            }
         }
+
+        // עדיין טוען את המרחק מהלוקאל
+        alertDistance = prefs.getInt("alert_distance", 100)
         seekBarDistance.progress = alertDistance
         updateDistanceText()
     }
@@ -83,12 +104,19 @@ class SettingsActivity : BaseActivity() {
         val prefs = getSharedPreferences("RemMePrefs", Context.MODE_PRIVATE)
         prefs.edit()
             .putString("home_location", locationName)
-            // ✅ מנקה קואורדינטות ישנות כדי שה-Service יבצע geocoding מחדש
             .remove("home_latitude")
             .remove("home_longitude")
             .apply()
 
-        Toast.makeText(this, "✓ מיקום בית נשמר: $locationName", Toast.LENGTH_LONG).show()
+        firebaseManager.saveHomeLocation(locationName) { success ->
+            runOnUiThread {
+                if (success) {
+                    Toast.makeText(this, "✓ נשמר בענן ☁️", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "❌ שגיאה בשמירה בענן", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
     }
 
     private fun saveAllSettings() {
@@ -96,26 +124,22 @@ class SettingsActivity : BaseActivity() {
         val location = editHomeLocation.text.toString().trim()
 
         val editor = prefs.edit()
+
         if (location.isNotEmpty()) {
             editor.putString("home_location", location)
-            // ✅ מנקה קואורדינטות ישנות לגיאוקודינג מחדש
             editor.remove("home_latitude")
             editor.remove("home_longitude")
+
+            // 🔥 שמירה ל-Firebase רק אם יש ערך אמיתי
+            firebaseManager.saveHomeLocation(location) { }
         }
+
         editor.putInt("alert_distance", alertDistance)
         editor.apply()
 
-        val distanceText = if (alertDistance >= 1000)
-            String.format("%.1f ק\"מ", alertDistance / 1000.0)
-        else "$alertDistance מטר"
-
-        Toast.makeText(
-            this,
-            "✓ ההגדרות נשמרו!\n📍 מיקום: ${if (location.isEmpty()) "לא הוגדר" else location}\n📏 מרחק: $distanceText",
-            Toast.LENGTH_LONG
-        ).show()
+        Toast.makeText(this, "✓ ההגדרות נשמרו!", Toast.LENGTH_LONG).show()
     }
-}
+
 
 data class UserSettings(
     var homeLocation: String = "",
@@ -124,3 +148,4 @@ data class UserSettings(
     var alertDistance: Int = 100,
     var isLocationTrackingEnabled: Boolean = false
 )
+}

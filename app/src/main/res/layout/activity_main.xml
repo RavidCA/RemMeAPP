@@ -181,6 +181,28 @@
                 android:textAlignment="viewStart"/>
         </LinearLayout>
 
+        <LinearLayout
+            android:id="@+id/menu_logout"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:orientation="horizontal"
+            android:layoutDirection="rtl"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="12dp"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="12dp"
+                android:text="  התנתקות"
+                android:textSize="20sp"
+                android:textColor="#0D47A1"
+                android:textAlignment="viewStart"/>
+        </LinearLayout>
+
     </LinearLayout>
 
     <androidx.cardview.widget.CardView

@@ -17,6 +17,7 @@ class ItemsActivity : BaseActivity() {
     private lateinit var itemsListView: ListView
     private val itemsList = mutableListOf<ItemData>()
     private lateinit var adapter: ItemsAdapter
+    private val firebaseManager = FirebaseManager()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -31,37 +32,50 @@ class ItemsActivity : BaseActivity() {
             onDelete = { position -> deleteItem(position) },
             onCheckedChange = { position, checked ->
                 itemsList[position].isChecked = checked
-                saveItemsToStorage()
+                // עדכון מהיר של פריט בודד ב-Firestore (בלי לכתוב את כל הרשימה)
+                firebaseManager.updateItemChecked(itemsList[position].id, checked)
+                saveItemsLocally()
             }
         )
         itemsListView.adapter = adapter
 
-        loadItemsFromStorage()
+        loadItems()
         fabAddItem.setOnClickListener { showAddItemDialog() }
     }
 
-    private fun updateEmptyMessage() {
-        val emptyMessage = findViewById<TextView>(R.id.emptyMessage)
-        emptyMessage.visibility = if (itemsList.isEmpty()) View.VISIBLE else View.GONE
-        itemsListView.visibility = if (itemsList.isEmpty()) View.GONE else View.VISIBLE
+    // ─── טעינה ───────────────────────────────────────────────────────────────
+
+    /**
+     * טוען קודם מ-SharedPreferences (מהיר) ואז מסנכרן מ-Firestore.
+     */
+    private fun loadItems() {
+        loadItemsLocally()   // תצוגה מיידית
+
+        // סנכרון מ-Firestore ברקע
+        firebaseManager.loadItems { cloudItems ->
+            runOnUiThread {
+                if (cloudItems != null && cloudItems.isNotEmpty()) {
+                    itemsList.clear()
+                    itemsList.addAll(cloudItems)
+                    adapter.notifyDataSetChanged()
+                    saveItemsLocally()   // עדכן cache מקומי
+                } else if (cloudItems != null && cloudItems.isEmpty() && itemsList.isNotEmpty()) {
+                    // משתמש חדש - שמור את ברירת המחדל ב-Firestore
+                    saveItemsToCloud()
+                }
+                updateEmptyMessage()
+            }
+        }
     }
 
-    // ✅ תוקן: שמירה בJSON במקום מחרוזת עם פסיקים - תומך בשמות עם פסיק
-    private fun loadItemsFromStorage() {
+    private fun loadItemsLocally() {
         val prefs = getSharedPreferences("RemMePrefs", Context.MODE_PRIVATE)
         val savedJson = prefs.getString("items_json", null)
-
         itemsList.clear()
 
         if (savedJson.isNullOrEmpty()) {
-            itemsList.addAll(listOf(
-                ItemData("מפתחות", "key"),
-                ItemData("ארנק", "wallet"),
-                ItemData("שעון חכם", "smart_wacth"),
-                ItemData("טלפון", "smartphone"),
-                ItemData("אוזניות", "headphones")
-            ))
-            saveItemsToStorage()
+            itemsList.addAll(defaultItems())
+            saveItemsLocally()
         } else {
             try {
                 val arr = JSONArray(savedJson)
@@ -75,16 +89,58 @@ class ItemsActivity : BaseActivity() {
                     ))
                 }
             } catch (e: Exception) {
-                // fallback למחרוזת ישנה אם קיימת
-                val oldStr = prefs.getString("items_list", null)
-                oldStr?.split(",")?.filter { it.isNotEmpty() }?.forEach { name ->
-                    itemsList.add(ItemData(name, "📦"))
-                }
+                itemsList.addAll(defaultItems())
             }
         }
 
         adapter.notifyDataSetChanged()
         updateEmptyMessage()
+    }
+
+    private fun defaultItems() = listOf(
+        ItemData("מפתחות", "key"),
+        ItemData("ארנק", "wallet"),
+        ItemData("שעון חכם", "smart_wacth"),
+        ItemData("טלפון", "smartphone"),
+        ItemData("אוזניות", "headphones")
+    )
+
+    // ─── שמירה ───────────────────────────────────────────────────────────────
+
+    fun saveItemsToStorage() {
+        saveItemsLocally()
+        saveItemsToCloud()
+    }
+
+    private fun saveItemsToCloud() {
+        firebaseManager.saveItems(itemsList) { /* אפשר להוסיף Toast אם רוצים */ }
+    }
+
+    fun saveItemsLocally() {
+        val prefs = getSharedPreferences("RemMePrefs", Context.MODE_PRIVATE)
+        val arr = JSONArray()
+        itemsList.forEach { item ->
+            val obj = JSONObject().apply {
+                put("name", item.name)
+                put("icon", item.icon)
+                put("isChecked", item.isChecked)
+                put("id", item.id)
+            }
+            arr.put(obj)
+        }
+        prefs.edit().putString("items_json", arr.toString()).apply()
+
+        // שמירת שמות בלבד עבור LocationTrackingService
+        val names = itemsList.joinToString(",") { it.name }
+        prefs.edit().putString("items_list", names).apply()
+    }
+
+    // ─── UI ──────────────────────────────────────────────────────────────────
+
+    private fun updateEmptyMessage() {
+        val emptyMessage = findViewById<TextView>(R.id.emptyMessage)
+        emptyMessage.visibility = if (itemsList.isEmpty()) View.VISIBLE else View.GONE
+        itemsListView.visibility = if (itemsList.isEmpty()) View.GONE else View.VISIBLE
     }
 
     private fun showAddItemDialog() {
@@ -120,43 +176,32 @@ class ItemsActivity : BaseActivity() {
     }
 
     private fun deleteItem(position: Int) {
-        val itemName = itemsList[position].name
+        val item = itemsList[position]
+
         AlertDialog.Builder(this)
             .setTitle("🗑️ מחיקת פריט")
-            .setMessage("האם למחוק את '$itemName'?")
+            .setMessage("האם למחוק את '${item.name}'?")
             .setPositiveButton("מחק") { _, _ ->
+
+                // 🔥 מחיקה מ-Firebase
+                firebaseManager.deleteItem(item.id)
+
+                // 🔥 מחיקה מקומית
                 itemsList.removeAt(position)
                 adapter.notifyDataSetChanged()
-                saveItemsToStorage()
+
+                saveItemsLocally()
                 updateEmptyMessage()
-                Toast.makeText(this, "נמחק: $itemName", Toast.LENGTH_SHORT).show()
+
+                Toast.makeText(this, "נמחק: ${item.name}", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("ביטול", null)
             .show()
     }
-
-    // ✅ תוקן: שמירה בJSON - שומר גם מצב סימון וגם ID לכל פריט
-    fun saveItemsToStorage() {
-        val prefs = getSharedPreferences("RemMePrefs", Context.MODE_PRIVATE)
-        val arr = JSONArray()
-        itemsList.forEach { item ->
-            val obj = JSONObject().apply {
-                put("name", item.name)
-                put("icon", item.icon)
-                put("isChecked", item.isChecked)
-                put("id", item.id)
-            }
-            arr.put(obj)
-        }
-        prefs.edit().putString("items_json", arr.toString()).apply()
-
-        // שמירה נוספת של שמות בלבד לשימוש ב-LocationTrackingService
-        val names = itemsList.joinToString(",") { it.name }
-        prefs.edit().putString("items_list", names).apply()
-    }
 }
 
-// ✅ תוקן: Adapter תומך ב-Checkbox עם callback לשמירה
+// ─── Adapter ─────────────────────────────────────────────────────────────────
+
 class ItemsAdapter(
     private val context: Context,
     private val items: List<ItemData>,
@@ -170,6 +215,7 @@ class ItemsAdapter(
 
     override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
         val item = items[position]
+        val density = context.resources.displayMetrics.density
 
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -177,31 +223,28 @@ class ItemsAdapter(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )
-            val p = (4 * context.resources.displayMetrics.density).toInt()
+            val p = (4 * density).toInt()
             setPadding(16, p, 16, p)
             gravity = android.view.Gravity.CENTER_VERTICAL
         }
 
-        // אייקון
         val iconView = TextView(context).apply {
-            val size = (32 * context.resources.displayMetrics.density).toInt()
+            val size = (32 * density).toInt()
             layoutParams = LinearLayout.LayoutParams(size, size)
             text = "📦"
             textSize = 18f
             gravity = android.view.Gravity.CENTER
         }
 
-        // שם הפריט
         val nameView = TextView(context).apply {
             val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            lp.marginStart = (12 * context.resources.displayMetrics.density).toInt()
+            lp.marginStart = (12 * density).toInt()
             layoutParams = lp
             text = item.name
             textSize = 16f
             layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
 
-        // ✅ חדש: Checkbox עם מצב שמור
         val checkBox = CheckBox(context).apply {
             isChecked = item.isChecked
             setOnCheckedChangeListener { _, isChecked ->
@@ -209,7 +252,6 @@ class ItemsAdapter(
             }
         }
 
-        // כפתור מחיקה
         val deleteBtn = Button(context).apply {
             text = "🗑️"
             textSize = 16f

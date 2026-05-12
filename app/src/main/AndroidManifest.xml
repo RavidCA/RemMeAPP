@@ -3,32 +3,14 @@
     xmlns:tools="http://schemas.android.com/tools"
     package="com.example.remme3">
 
-    <!-- הרשאות לאפליקציה -->
-    <!-- הרשאת מיקום גס (רשת סלולרית/WiFi) -->
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-
-    <!-- הרשאת מיקום מדויק (GPS) -->
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-
-    <!-- הרשאת מיקום ברקע (נדרש מ-Android 10 ומעלה) -->
-    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
-
-    <!-- הרשאת אינטרנט (לFirebase ושירותים אחרים) -->
+    <!-- Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
-
-    <!-- הרשאת התראות (נדרש מ-Android 13 ומעלה) -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
-    <!-- הרשאה להפעלת שירות foreground -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
-
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
@@ -41,9 +23,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.ReMMe3">
 
-        <!-- MainActivity - דף הבית (נחיתה) -->
+        <!-- Login -->
         <activity
-            android:name="com.example.remme3.MainActivity"
+            android:name=".LoginActivity"
             android:exported="true"
             android:screenOrientation="portrait">
             <intent-filter>
@@ -52,32 +34,32 @@
             </intent-filter>
         </activity>
 
-        <!-- ItemsActivity - דף ניהול פריטים -->
+        <!-- Main -->
         <activity
-            android:name="com.example.remme3.ItemsActivity"
+            android:name=".MainActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <!-- Items -->
+        <activity
+            android:name=".ItemsActivity"
             android:exported="false"
             android:screenOrientation="portrait"
-            android:parentActivityName="com.example.remme3.MainActivity">
-            <meta-data
-                android:name="android.support.PARENT_ACTIVITY"
-                android:value="com.example.remme3.MainActivity" />
-        </activity>
+            android:parentActivityName=".MainActivity" />
 
-        <!-- SettingsActivity - דף הגדרות -->
+        <!-- Settings -->
         <activity
-            android:name="com.example.remme3.SettingsActivity"
+            android:name=".SettingsActivity"
             android:exported="false"
             android:screenOrientation="portrait"
-            android:parentActivityName="com.example.remme3.MainActivity">
-            <meta-data
-                android:name="android.support.PARENT_ACTIVITY"
-                android:value="com.example.remme3.MainActivity" />
-        </activity>
+            android:parentActivityName=".MainActivity" />
 
+        <!-- Service -->
         <service
             android:name=".LocationTrackingService"
             android:foregroundServiceType="location"
             android:exported="false" />
+
     </application>
 
 </manifest>
