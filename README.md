@@ -11,6 +11,10 @@ The goal of the application is to help users avoid forgetting everyday items suc
 
 ## Features
 
+### Login Page
+- register
+- log in 
+(register by Email and password)
 ### 🏠 Main Screen
 
 The main screen displays a table containing a list of items that the user might want to take when leaving home.
@@ -88,7 +92,8 @@ A reminder is triggered **only when the user exceeds the configured distance**.
 * Smart suggestions based on user habits
 * Cloud synchronization
 
-  🔥 Firebase Integration
+
+🔥 Firebase Integration
 
 The application uses Firebase for cloud synchronization and user data storage.
 
